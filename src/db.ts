@@ -16,6 +16,11 @@ import { dirname } from "node:path";
 const DB_PATH = process.env["INSURANCE_DB_PATH"] ?? "data/insurance.db";
 
 export const SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS db_metadata (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS frameworks (
   id              TEXT    PRIMARY KEY,
   name            TEXT    NOT NULL,
@@ -161,10 +166,23 @@ export function getDb(): Database.Database {
     mkdirSync(dir, { recursive: true });
   }
 
-  _db = new Database(DB_PATH);
-  _db.pragma("journal_mode = WAL");
-  _db.pragma("foreign_keys = ON");
-  _db.exec(SCHEMA_SQL);
+  // Open the shipped DB in read-only mode at runtime. The DB is built and
+  // shipped by `scripts/build-db.ts` in `journal_mode=delete` so it travels as
+  // a single file (no -wal/-shm sidecars). Forcing WAL here would mutate the
+  // shipped artefact on first read.
+  const fileExists = existsSync(DB_PATH);
+  if (fileExists) {
+    _db = new Database(DB_PATH, { readonly: true, fileMustExist: true });
+    _db.pragma("foreign_keys = ON");
+  } else {
+    // First-run case (no DB on disk): create writable so the schema can be
+    // initialised by callers like seed-sample.ts. Keep DELETE journal mode so
+    // any artefact produced here also ships as a single file.
+    _db = new Database(DB_PATH);
+    _db.pragma("journal_mode = DELETE");
+    _db.pragma("foreign_keys = ON");
+    _db.exec(SCHEMA_SQL);
+  }
 
   return _db;
 }
@@ -358,4 +376,20 @@ export function getStats(): DbStats {
   const controls = (db.prepare("SELECT COUNT(*) AS n FROM controls").get() as { n: number }).n;
   const circulars = (db.prepare("SELECT COUNT(*) AS n FROM circulars").get() as { n: number }).n;
   return { frameworks, controls, circulars };
+}
+
+// --- Metadata -----------------------------------------------------------------
+
+export function getMetadata(): Record<string, string> {
+  const db = getDb();
+  try {
+    const rows = db
+      .prepare("SELECT key, value FROM db_metadata")
+      .all() as Array<{ key: string; value: string }>;
+    const out: Record<string, string> = {};
+    for (const r of rows) out[r.key] = r.value;
+    return out;
+  } catch {
+    return {};
+  }
 }

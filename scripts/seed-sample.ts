@@ -22,8 +22,36 @@ if (force && existsSync(DB_PATH)) {
   console.log(`Deleted ${DB_PATH}`);
 }
 
+// If a non-trivial DB is already present (e.g. the production-built artefact
+// committed by CI ingestion), don't clobber it with the sample seed. Pass
+// --force to override.
+if (existsSync(DB_PATH) && !force) {
+  const probe = new Database(DB_PATH, { readonly: true });
+  let totalRows = 0;
+  try {
+    const tables = probe
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('frameworks','controls','circulars')")
+      .all() as Array<{ name: string }>;
+    for (const t of tables) {
+      const r = probe.prepare(`SELECT COUNT(*) AS n FROM ${t.name}`).get() as {
+        n: number;
+      };
+      totalRows += r.n;
+    }
+  } catch {
+    // table doesn't exist yet — fall through to seed
+  }
+  probe.close();
+  if (totalRows >= 10) {
+    console.log(
+      `Existing DB at ${DB_PATH} has ${totalRows} rows; skipping sample seed. Pass --force to override.`,
+    );
+    process.exit(0);
+  }
+}
+
 const db = new Database(DB_PATH);
-db.pragma("journal_mode = WAL");
+db.pragma("journal_mode = DELETE");
 db.pragma("foreign_keys = ON");
 db.exec(SCHEMA_SQL);
 console.log(`Database initialised at ${DB_PATH}`);

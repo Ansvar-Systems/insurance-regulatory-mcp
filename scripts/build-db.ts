@@ -537,14 +537,44 @@ async function main(): Promise<void> {
     if (result.changes > 0) circularsInserted++;
   }
 
-  db.pragma("journal_mode = WAL");
-  db.pragma("vacuum");
+  // Populate db_metadata with build provenance so the `about` /
+  // `check_data_freshness` tools and downstream consumers can verify the
+  // shipped artefact at runtime without re-reading coverage.json.
+  const insertMeta = db.prepare(
+    "INSERT OR REPLACE INTO db_metadata (key, value) VALUES (?, ?)",
+  );
+  const stats = {
+    frameworks: (db.prepare("SELECT COUNT(*) AS n FROM frameworks").get() as { n: number }).n,
+    controls: (db.prepare("SELECT COUNT(*) AS n FROM controls").get() as { n: number }).n,
+    circulars: (db.prepare("SELECT COUNT(*) AS n FROM circulars").get() as { n: number }).n,
+  };
+  const builtAt = new Date().toISOString();
+  insertMeta.run("schema_version", "1");
+  insertMeta.run("mcp_name", "insurance-regulatory-mcp");
+  insertMeta.run("source_authority", "IAIS / NAIC / Lloyd's");
+  insertMeta.run("source_url", "https://www.iais.org/activities-topics/standard-setting/icps-and-comframe/");
+  insertMeta.run("built_at", builtAt);
+  insertMeta.run("frameworks_count", String(stats.frameworks));
+  insertMeta.run("controls_count", String(stats.controls));
+  insertMeta.run("circulars_count", String(stats.circulars));
+  insertMeta.run("update_frequency", "quarterly");
+
+  // Ship the database in DELETE journal mode so it travels as a single file
+  // (no -wal/-shm sidecars). Checkpoint and vacuum first to compact.
+  try {
+    db.pragma("wal_checkpoint(TRUNCATE)");
+  } catch {
+    // ignore — only relevant if WAL was previously enabled
+  }
+  db.pragma("journal_mode = DELETE");
+  db.exec("VACUUM");
 
   console.log(`
 Build complete:
   Frameworks : ${frameworksInserted} inserted
-  Controls   : ${controlsInserted} inserted
+  Controls   : ${circularsInserted === 0 ? controlsInserted : controlsInserted} inserted
   Circulars  : ${circularsInserted} inserted
+  Built at   : ${builtAt}
 
 Database: ${DB_PATH}`);
 }
