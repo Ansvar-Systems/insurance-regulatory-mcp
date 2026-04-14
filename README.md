@@ -64,19 +64,45 @@ docker run -p 8383:8383 ghcr.io/ansvar-systems/insurance-regulatory-mcp:latest
 | `list_insurance_frameworks` | List all frameworks with version and standard counts |
 | `about` | Server metadata, version, and coverage summary |
 | `list_sources` | Data provenance: sources, retrieval method, licensing |
+| `check_data_freshness` | Per-source staleness report against expected refresh cadence |
 
 See [TOOLS.md](TOOLS.md) for parameters, return formats, and examples.
 
+All success responses include a `_meta` block (disclaimer, data age,
+source URL); `get_insurance_standard` also includes a `_citation` block.
+Errors include an `_error_type` discriminator
+(`validation_error` | `not_found` | `unknown_tool` | `internal_error`).
+
 ## Data Sources
+
+The shipped database carries 67 rows: 8 frameworks, 28 controls
+(26 IAIS ICPs + 2 framework overviews), and 31 circulars
+(IAIS Application Papers and supervisory material). NAIC and Lloyd's are
+covered in scope but not yet populated — see [COVERAGE.md](COVERAGE.md)
+for the per-source breakdown and the access caveats below.
 
 All data is sourced from official public publications:
 
-- [IAIS Insurance Core Principles](https://www.iaisweb.org/activities-topics/insurance-core-principles/)
-- [IAIS Application Papers](https://www.iaisweb.org/activities-topics/)
-- [NAIC Model Laws](https://content.naic.org/model-laws)
-- [Lloyd's Minimum Standards](https://www.lloyds.com/conducting-business/market-oversight/acts-and-regulation/lloyds-minimum-standards)
+- [IAIS Insurance Core Principles](https://www.iais.org/activities-topics/standard-setting/icps-and-comframe/)
+- [IAIS Application Papers](https://www.iais.org/activities-topics/)
+- [NAIC Model Laws](https://content.naic.org/model-laws) — most are auth-gated
+  behind member registration; this MCP only indexes the publicly-available subset
+- [Lloyd's Minimum Standards](https://www.lloyds.com/conducting-business/market-oversight/acts-and-regulation/lloyds-minimum-standards) — bulletin
+  listing is JS-rendered; bulletin set is curated rather than auto-harvested
 
 See [sources.yml](sources.yml) for full provenance details.
+
+## Repository Documentation
+
+- [COVERAGE.md](COVERAGE.md) — what is and isn't indexed, per-source breakdown
+- [TOOLS.md](TOOLS.md) — full tool spec with parameters and example responses
+- [REGISTRY.md](REGISTRY.md) — npm and MCP-registry metadata
+- [DISCLAIMER.md](DISCLAIMER.md) — informational reference disclaimer
+- [PRIVACY.md](PRIVACY.md) — privacy notice
+- [SECURITY.md](SECURITY.md) — vulnerability reporting
+- [CONTRIBUTING.md](CONTRIBUTING.md) — dev workflow and branch strategy
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — community standards
+- [CHANGELOG.md](CHANGELOG.md) — release notes
 
 ## Development
 
