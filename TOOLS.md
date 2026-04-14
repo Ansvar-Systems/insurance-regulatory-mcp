@@ -45,7 +45,7 @@ Full-text search across IAIS ICPs, Application Papers, ComFrame, NAIC Model Laws
   "_meta": {
     "disclaimer": "This data is provided for informational reference only...",
     "data_age": "See coverage.json; refresh frequency: quarterly",
-    "source_url": "https://www.iaisweb.org/activities-topics/insurance-core-principles/"
+    "source_url": "https://www.iais.org/activities-topics/standard-setting/icps-and-comframe/"
   }
 }
 ```
@@ -89,7 +89,7 @@ Get a specific IAIS standard, ICP, or application paper by its reference identif
   "_meta": {
     "disclaimer": "This data is provided for informational reference only...",
     "data_age": "See coverage.json; refresh frequency: quarterly",
-    "source_url": "https://www.iaisweb.org/activities-topics/insurance-core-principles/"
+    "source_url": "https://www.iais.org/activities-topics/standard-setting/icps-and-comframe/"
   }
 }
 ```
@@ -141,7 +141,7 @@ Search IAIS Application Papers with optional framework and domain filters.
   "_meta": {
     "disclaimer": "This data is provided for informational reference only...",
     "data_age": "See coverage.json; refresh frequency: quarterly",
-    "source_url": "https://www.iaisweb.org/activities-topics/insurance-core-principles/"
+    "source_url": "https://www.iais.org/activities-topics/standard-setting/icps-and-comframe/"
   }
 }
 ```
@@ -204,7 +204,7 @@ None.
   "_meta": {
     "disclaimer": "This data is provided for informational reference only...",
     "data_age": "See coverage.json; refresh frequency: quarterly",
-    "source_url": "https://www.iaisweb.org/activities-topics/insurance-core-principles/"
+    "source_url": "https://www.iais.org/activities-topics/standard-setting/icps-and-comframe/"
   }
 }
 ```
@@ -236,7 +236,7 @@ None.
   "version": "0.1.0",
   "description": "Insurance Regulatory Intelligence MCP server...",
   "data_source": "IAIS and international insurance standards",
-  "source_url": "https://www.iaisweb.org/activities-topics/insurance-core-principles/",
+  "source_url": "https://www.iais.org/activities-topics/standard-setting/icps-and-comframe/",
   "coverage": {
     "frameworks": "5 insurance regulatory frameworks",
     "standards": "26 ICPs and application paper entries",
@@ -256,7 +256,7 @@ None.
   "_meta": {
     "disclaimer": "This data is provided for informational reference only...",
     "data_age": "See coverage.json; refresh frequency: quarterly",
-    "source_url": "https://www.iaisweb.org/activities-topics/insurance-core-principles/"
+    "source_url": "https://www.iais.org/activities-topics/standard-setting/icps-and-comframe/"
   }
 }
 ```
@@ -289,7 +289,82 @@ None.
   "_meta": {
     "disclaimer": "This data is provided for informational reference only...",
     "data_age": "See coverage.json; refresh frequency: quarterly",
-    "source_url": "https://www.iaisweb.org/activities-topics/insurance-core-principles/"
+    "source_url": "https://www.iais.org/activities-topics/standard-setting/icps-and-comframe/"
   }
 }
 ```
+
+---
+
+## check_data_freshness
+
+Report whether the embedded data is current. Combines the database build
+timestamp recorded in `db_metadata.built_at` with the per-source
+`last_fetched` timestamps in `data/coverage.json` and flags any source
+that has aged past its expected refresh cadence.
+
+### Parameters
+
+None.
+
+### Example Call
+
+```json
+{
+  "name": "check_data_freshness",
+  "arguments": {}
+}
+```
+
+### Example Response
+
+```json
+{
+  "checked_at": "2026-04-14T12:48:00.000Z",
+  "db_built_at": "2026-04-14T06:01:03.627Z",
+  "db_totals": {
+    "frameworks": "8",
+    "controls": "28",
+    "circulars": "31"
+  },
+  "coverage_generated_at": "2026-04-14T06:01:03.627Z",
+  "update_frequency": "quarterly",
+  "any_stale": false,
+  "sources": [
+    {
+      "name": "IAIS — Insurance Core Principles, ComFrame, Application Papers",
+      "url": "https://www.iais.org/activities-topics/standard-setting/icps-and-comframe/",
+      "status": "current",
+      "last_fetched": "2026-04-14T05:56:24.953Z",
+      "update_frequency": "quarterly",
+      "max_age_days": 92,
+      "age_days": 0,
+      "stale": false,
+      "reason": "current"
+    }
+  ],
+  "_meta": {
+    "disclaimer": "This data is provided for informational reference only...",
+    "data_age": "Database built at 2026-04-14T06:01:03.627Z; refresh frequency: quarterly",
+    "source_url": "https://www.iais.org/activities-topics/standard-setting/icps-and-comframe/"
+  }
+}
+```
+
+---
+
+## Error responses
+
+Errors are returned with `isError: true` and a JSON body containing an
+`_error_type` discriminator alongside `_meta`:
+
+```json
+{
+  "error": "No standard found with reference: ICP-99...",
+  "_error_type": "not_found",
+  "_meta": { "disclaimer": "...", "data_age": "...", "source_url": "..." }
+}
+```
+
+`_error_type` values: `validation_error`, `not_found`, `unknown_tool`,
+`internal_error`.

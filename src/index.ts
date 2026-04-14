@@ -30,6 +30,7 @@ import {
   getCircular,
   listFrameworks,
   getStats,
+  getMetadata,
 } from "./db.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -56,11 +57,11 @@ const SERVER_NAME = "insurance-regulatory-mcp";
 
 const DISCLAIMER =
   "This data is provided for informational reference only. It does not constitute legal or professional advice. " +
-  "Always verify against official IAIS publications at https://www.iaisweb.org/. " +
+  "Always verify against official IAIS publications at https://www.iais.org/. " +
   "IAIS standards are subject to revision; confirm currency before reliance. " +
   "This MCP is premium-enabled — full access requires an Ansvar premium subscription.";
 
-const SOURCE_URL = "https://www.iaisweb.org/activities-topics/insurance-core-principles/";
+const SOURCE_URL = "https://www.iais.org/activities-topics/standard-setting/icps-and-comframe/";
 
 // --- Tool definitions ---------------------------------------------------------
 
@@ -188,6 +189,18 @@ const TOOLS = [
       required: [],
     },
   },
+  {
+    name: "check_data_freshness",
+    description:
+      "Report when the embedded database was last built, the per-source last-fetched timestamps, " +
+      "and whether any source is past its expected refresh cadence. Useful for callers that need " +
+      "to decide whether to trust cached results or trigger a re-ingestion.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
 ];
 
 // --- Zod schemas --------------------------------------------------------------
@@ -217,18 +230,132 @@ function textContent(data: unknown) {
   };
 }
 
-function errorContent(message: string) {
+type ErrorType =
+  | "validation_error"
+  | "not_found"
+  | "unknown_tool"
+  | "internal_error";
+
+function errorContent(message: string, errorType: ErrorType = "internal_error") {
   return {
-    content: [{ type: "text" as const, text: message }],
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify(
+          { error: message, _error_type: errorType, _meta: buildMeta() },
+          null,
+          2,
+        ),
+      },
+    ],
     isError: true as const,
   };
 }
 
 function buildMeta(sourceUrl?: string): Record<string, unknown> {
+  const meta = getMetadata();
   return {
     disclaimer: DISCLAIMER,
-    data_age: "See coverage.json; refresh frequency: quarterly",
+    data_age: meta["built_at"]
+      ? `Database built at ${meta["built_at"]}; refresh frequency: ${meta["update_frequency"] ?? "quarterly"}`
+      : "See coverage.json; refresh frequency: quarterly",
     source_url: sourceUrl ?? SOURCE_URL,
+  };
+}
+
+interface CoverageSource {
+  name: string;
+  url: string;
+  last_fetched: string | null;
+  update_frequency: string;
+  item_count: number;
+  status: string;
+  notes?: string;
+}
+
+interface CoverageFile {
+  generatedAt: string;
+  mcp: string;
+  version?: string;
+  sources: CoverageSource[];
+  totals: { frameworks: number; controls: number; circulars: number };
+}
+
+const FRESHNESS_DAYS: Record<string, number> = {
+  daily: 1,
+  weekly: 7,
+  monthly: 31,
+  quarterly: 92,
+  annually: 365,
+  rolling: 92,
+};
+
+function buildFreshnessReport(): Record<string, unknown> {
+  const meta = getMetadata();
+  let coverage: CoverageFile | null = null;
+  try {
+    coverage = JSON.parse(
+      readFileSync(join(__dirname, "..", "data", "coverage.json"), "utf8"),
+    ) as CoverageFile;
+  } catch {
+    coverage = null;
+  }
+
+  const now = Date.now();
+  const sources = (coverage?.sources ?? []).map((s) => {
+    const maxAgeDays = FRESHNESS_DAYS[s.update_frequency.toLowerCase()] ?? 92;
+    let ageDays: number | null = null;
+    let stale = false;
+    let reason = "current";
+    if (!s.last_fetched) {
+      stale = true;
+      reason = "never fetched";
+    } else {
+      const lastMs = new Date(s.last_fetched).getTime();
+      if (Number.isNaN(lastMs)) {
+        stale = true;
+        reason = "invalid last_fetched timestamp";
+      } else {
+        ageDays = Math.floor((now - lastMs) / (24 * 60 * 60 * 1000));
+        if (ageDays > maxAgeDays) {
+          stale = true;
+          reason = `last fetched ${ageDays} days ago (max ${maxAgeDays} for ${s.update_frequency})`;
+        }
+      }
+    }
+    if (s.item_count === 0 && s.status !== "gated" && s.status !== "unknown") {
+      stale = true;
+      reason = "item_count is 0";
+    }
+    return {
+      name: s.name,
+      url: s.url,
+      status: s.status,
+      last_fetched: s.last_fetched,
+      update_frequency: s.update_frequency,
+      max_age_days: maxAgeDays,
+      age_days: ageDays,
+      stale,
+      reason,
+      notes: s.notes,
+    };
+  });
+
+  const anyStale = sources.some((s) => s.stale);
+
+  return {
+    checked_at: new Date().toISOString(),
+    db_built_at: meta["built_at"] ?? null,
+    db_totals: {
+      frameworks: meta["frameworks_count"] ?? null,
+      controls: meta["controls_count"] ?? null,
+      circulars: meta["circulars_count"] ?? null,
+    },
+    coverage_generated_at: coverage?.generatedAt ?? null,
+    update_frequency: meta["update_frequency"] ?? "quarterly",
+    any_stale: anyStale,
+    sources,
+    _meta: buildMeta(),
   };
 }
 
@@ -293,6 +420,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return errorContent(
           `No standard found with reference: ${standardId}. ` +
             "Use search_insurance_standards to find available references.",
+          "not_found",
         );
       }
 
@@ -354,12 +482,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         });
       }
 
+      case "check_data_freshness": {
+        return textContent(buildFreshnessReport());
+      }
+
       default:
-        return errorContent(`Unknown tool: ${name}`);
+        return errorContent(`Unknown tool: ${name}`, "unknown_tool");
     }
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const isZod = message.includes("Required") || message.includes("Invalid");
     return errorContent(
-      `Error executing ${name}: ${err instanceof Error ? err.message : String(err)}`,
+      `Error executing ${name}: ${message}`,
+      isZod ? "validation_error" : "internal_error",
     );
   }
 });

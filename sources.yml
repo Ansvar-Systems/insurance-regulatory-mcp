@@ -5,14 +5,14 @@ category: "domain"
 sources:
   - name: "IAIS Insurance Core Principles"
     authority: "International Association of Insurance Supervisors (IAIS)"
-    official_portal: "https://www.iaisweb.org/activities-topics/insurance-core-principles/"
+    official_portal: "https://www.iais.org/activities-topics/standard-setting/icps-and-comframe/"
     retrieval_method: "HTML_SCRAPE"
     format: "PDF"
     authentication: "none"
     update_frequency: "quarterly"
     license:
       type: "open_access"
-      url: "https://www.iaisweb.org"
+      url: "https://www.iais.org"
       summary: "Open access IAIS publications"
     coverage:
       scope: "26 Insurance Core Principles (ICPs) covering licensing, supervision, governance, ERM, capital adequacy, conduct of business, AML/CFT, group supervision, cross-border cooperation"
@@ -23,14 +23,14 @@ sources:
 
   - name: "IAIS Application Papers & ComFrame"
     authority: "International Association of Insurance Supervisors (IAIS)"
-    official_portal: "https://www.iaisweb.org/activities-topics/"
+    official_portal: "https://www.iais.org/activities-topics/"
     retrieval_method: "HTML_SCRAPE"
     format: "PDF"
     authentication: "none"
     update_frequency: "quarterly"
     license:
       type: "open_access"
-      url: "https://www.iaisweb.org"
+      url: "https://www.iais.org"
       summary: "Open access IAIS publications"
     coverage:
       scope: "Application Papers (cyber risk, climate risk, AI, conduct, ESG); ComFrame (Common Framework for Internationally Active Insurance Groups); Holistic Framework for systemic risk"
