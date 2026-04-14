@@ -1,0 +1,58 @@
+schema_version: "1.0"
+mcp_name: "Insurance Regulatory Intelligence MCP"
+category: "domain"
+
+sources:
+  - name: "IAIS Insurance Core Principles"
+    authority: "International Association of Insurance Supervisors (IAIS)"
+    official_portal: "https://www.iaisweb.org/activities-topics/insurance-core-principles/"
+    retrieval_method: "HTML_SCRAPE"
+    format: "PDF"
+    authentication: "none"
+    update_frequency: "quarterly"
+    license:
+      type: "open_access"
+      url: "https://www.iaisweb.org"
+      summary: "Open access IAIS publications"
+    coverage:
+      scope: "26 Insurance Core Principles (ICPs) covering licensing, supervision, governance, ERM, capital adequacy, conduct of business, AML/CFT, group supervision, cross-border cooperation"
+      version: "Current (2019 revision with 2024 updates)"
+      item_count: "26 ICPs + ~40 application papers"
+    languages:
+      - "en"
+
+  - name: "IAIS Application Papers & ComFrame"
+    authority: "International Association of Insurance Supervisors (IAIS)"
+    official_portal: "https://www.iaisweb.org/activities-topics/"
+    retrieval_method: "HTML_SCRAPE"
+    format: "PDF"
+    authentication: "none"
+    update_frequency: "quarterly"
+    license:
+      type: "open_access"
+      url: "https://www.iaisweb.org"
+      summary: "Open access IAIS publications"
+    coverage:
+      scope: "Application Papers (cyber risk, climate risk, AI, conduct, ESG); ComFrame (Common Framework for Internationally Active Insurance Groups); Holistic Framework for systemic risk"
+      version: "Current"
+      item_count: "~40 application papers + ComFrame"
+    languages:
+      - "en"
+
+  - name: "Supplementary Insurance Standards"
+    authority: "NAIC (US) + Lloyd's of London (UK)"
+    official_portal: "https://content.naic.org + https://www.lloyds.com/resources-and-services"
+    retrieval_method: "HTML_SCRAPE"
+    format: "PDF"
+    authentication: "none"
+    update_frequency: "quarterly"
+    license:
+      type: "open_access"
+      url: "https://content.naic.org/copyright-and-trademark"
+      summary: "Publicly-available NAIC model laws and Lloyd's market bulletins"
+    coverage:
+      scope: "NAIC Model Laws (selected cyber/data/privacy); Lloyd's Minimum Standards for Managing Agents; Cyber Insurance Underwriting Frameworks"
+      version: "Current"
+      item_count: "~20-30 selected documents"
+    languages:
+      - "en"

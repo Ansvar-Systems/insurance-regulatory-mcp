@@ -1,0 +1,11 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "intl.ansvar/insurance-regulatory-mcp",
+  "description": "Query IAIS Insurance Core Principles, Application Papers, ComFrame, NAIC Model Laws, and Lloyd's Market Requirements for international insurance regulation",
+  "repository": { "url": "https://github.com/Ansvar-Systems/insurance-regulatory-mcp", "source": "github" },
+  "homepage": "https://ansvar.eu",
+  "version": "0.1.0",
+  "license": "BSL-1.1",
+  "keywords": ["iais", "insurance", "icp", "comframe", "naic", "lloyds", "international", "regulation", "compliance", "mcp", "ansvar"],
+  "packages": [{ "registryType": "npm", "identifier": "@ansvar/insurance-regulatory-mcp", "version": "0.1.0", "transport": { "type": "stdio" } }]
+}
