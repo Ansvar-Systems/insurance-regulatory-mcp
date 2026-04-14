@@ -1,26 +1,25 @@
 /**
  * Insurance Regulatory Intelligence Ingestion Fetcher
  *
- * Fetches IAIS, NAIC, and Lloyd's portals, extracts insurance-regulatory PDF links,
- * downloads PDFs, and extracts text content for database ingestion.
+ * Fetches IAIS (iais.org), NAIC (content.naic.org) and Lloyd's (lloyds.com) portals,
+ * extracts insurance-regulatory PDF links, downloads PDFs, and extracts text content
+ * for database ingestion.
  *
- * Primary source: iaisweb.org (ICPs, Application Papers, ComFrame)
- * Supplementary:  content.naic.org (Model Laws), lloyds.com (Market Requirements)
+ * Primary source: iais.org (ICPs, ComFrame, Application Papers, Holistic Framework)
+ * Supplementary: content.naic.org (Model Laws — may be auth-gated), lloyds.com (Market Bulletins)
  *
  * Usage:
  *   npx tsx scripts/ingest-fetch.ts
  *   npx tsx scripts/ingest-fetch.ts --dry-run     # log what would be fetched
  *   npx tsx scripts/ingest-fetch.ts --force        # re-download existing files
  *   npx tsx scripts/ingest-fetch.ts --limit 5      # fetch only first N documents
+ *   npx tsx scripts/ingest-fetch.ts --source iais  # fetch only IAIS (also: naic, lloyds)
  */
 
-import * as cheerio from "cheerio";
 import {
   existsSync,
   mkdirSync,
   writeFileSync,
-  readFileSync,
-  createWriteStream,
 } from "node:fs";
 import { join, basename } from "node:path";
 
@@ -28,13 +27,16 @@ import { join, basename } from "node:path";
 // Configuration
 // ---------------------------------------------------------------------------
 
-const IAIS_BASE_URL = "https://www.iaisweb.org";
-const IAIS_ICP_URL = `${IAIS_BASE_URL}/activities-topics/insurance-core-principles/`;
-const IAIS_AP_URL = `${IAIS_BASE_URL}/activities-topics/`;
+const IAIS_BASE_URL = "https://www.iais.org";
+const IAIS_ICP_URL = `${IAIS_BASE_URL}/activities-topics/standard-setting/icps-and-comframe/`;
+const IAIS_AP_URL = `${IAIS_BASE_URL}/publications/application-papers/`;
+const IAIS_SITEMAP_URL = `${IAIS_BASE_URL}/sitemap.xml`;
+
 const NAIC_BASE_URL = "https://content.naic.org";
-const NAIC_MODELS_URL = `${NAIC_BASE_URL}/model-laws`;
+const NAIC_MODELS_URL = `${NAIC_BASE_URL}/cipr_topics`;
+
 const LLOYDS_BASE_URL = "https://www.lloyds.com";
-const LLOYDS_STANDARDS_URL = `${LLOYDS_BASE_URL}/conducting-business/market-oversight/acts-and-regulation/lloyds-minimum-standards`;
+const LLOYDS_BULLETINS_URL = `${LLOYDS_BASE_URL}/market-resources/market-bulletins`;
 
 const RAW_DIR = "data/raw";
 const RATE_LIMIT_MS = 2000;
@@ -47,26 +49,36 @@ const USER_AGENT = "Ansvar-MCP/1.0 (regulatory-data-ingestion; https://ansvar.eu
 const INSURANCE_KEYWORDS = [
   "insurance core principle",
   "icp",
-  "application paper",
+  "icps",
   "comframe",
+  "application-paper",
+  "application paper",
   "holistic framework",
   "insurance capital standard",
-  "ics",
-  "cyber insurance",
-  "cyber risk",
-  "climate risk",
-  "climate change",
+  "ics ",
+  "cyber",
+  "climate",
+  "operational resilience",
   "conduct of business",
   "enterprise risk management",
   "capital adequacy",
   "group supervision",
+  "group-wide supervision",
   "supervisory cooperation",
-  "model law",
-  "data security",
-  "privacy",
-  "cybersecurity",
+  "macroprudential",
+  "recovery planning",
+  "resolution",
+  "liquidity risk",
+  "corporate governance",
+  "fair treatment",
+  "artificial intelligence",
+  "DEI",
+  "money laundering",
+  "supervisory colleges",
+  "digital technology",
+  "systemic risk",
+  "market bulletin",
   "minimum standards",
-  "managing agent",
 ];
 
 // CLI flags
@@ -75,17 +87,21 @@ const dryRun = args.includes("--dry-run");
 const force = args.includes("--force");
 const limitIdx = args.indexOf("--limit");
 const fetchLimit = limitIdx !== -1 ? parseInt(args[limitIdx + 1] ?? "999", 10) : 999;
+const sourceIdx = args.indexOf("--source");
+const sourceFilter = sourceIdx !== -1 ? (args[sourceIdx + 1] ?? "").toLowerCase() : "";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+type SourceName = "iais" | "naic" | "lloyds";
 
 interface DocumentLink {
   title: string;
   url: string;
   category: string;
   filename: string;
-  source: "iais" | "naic" | "lloyds";
+  source: SourceName;
 }
 
 interface FetchedDocument {
@@ -93,7 +109,7 @@ interface FetchedDocument {
   url: string;
   category: string;
   filename: string;
-  source: string;
+  source: SourceName;
   text: string;
   fetchedAt: string;
 }
@@ -119,6 +135,7 @@ async function fetchWithRetry(
         const response = await fetch(url, {
           headers: { "User-Agent": USER_AGENT },
           signal: controller.signal,
+          redirect: "follow",
         });
         clearTimeout(timeoutId);
         if (!response.ok) {
@@ -162,139 +179,256 @@ async function extractPdfText(pdfBuffer: Buffer): Promise<string> {
 // Relevance filter
 // ---------------------------------------------------------------------------
 
-function isInsuranceRelevant(title: string): boolean {
-  const lower = title.toLowerCase();
-  return INSURANCE_KEYWORDS.some((kw) => lower.includes(kw));
+function isInsuranceRelevant(urlOrTitle: string): boolean {
+  const lower = urlOrTitle.toLowerCase();
+  return INSURANCE_KEYWORDS.some((kw) => lower.includes(kw.toLowerCase()));
+}
+
+function cleanFilenameForTitle(url: string): string {
+  const base = basename(url.split("?")[0] ?? url).replace(/\.pdf$/i, "");
+  // Strip leading date prefix like 180629- or 210525-
+  return base.replace(/^\d{6,8}-/, "").replace(/-/g, " ").trim();
+}
+
+function inferCategoryFromUrl(url: string): string {
+  const lower = url.toLowerCase();
+  if (lower.includes("icps-and-comframe") || /\/icp[-s]?\b|icp\.pdf/.test(lower)) {
+    return "Insurance Core Principles";
+  }
+  if (lower.includes("application-paper") || lower.includes("application_paper")) {
+    return "Application Papers";
+  }
+  if (lower.includes("comframe")) return "ComFrame";
+  if (lower.includes("holistic-framework") || lower.includes("systemic-risk")) {
+    return "Holistic Framework";
+  }
+  if (lower.includes("ics") || lower.includes("insurance-capital-standard")) {
+    return "Insurance Capital Standard";
+  }
+  if (lower.includes("naic.org")) return "NAIC Model Laws";
+  if (lower.includes("lloyds.com") || lower.includes("assets.lloyds.com")) {
+    return "Lloyd's Market Requirements";
+  }
+  return "IAIS Supervisory Material";
 }
 
 // ---------------------------------------------------------------------------
-// IAIS portal scraping
+// IAIS portal discovery
 // ---------------------------------------------------------------------------
 
-async function scrapeIaisPortal(): Promise<DocumentLink[]> {
-  console.log(`Fetching IAIS ICP portal: ${IAIS_ICP_URL}`);
+async function scrapeIaisSitemap(): Promise<DocumentLink[]> {
+  console.log(`Discovering IAIS publications via sitemap: ${IAIS_SITEMAP_URL}`);
   const links: DocumentLink[] = [];
 
   try {
-    const response = await fetchWithRetry(IAIS_ICP_URL);
-    const html = await response.text();
-    const $ = cheerio.load(html);
+    const response = await fetchWithRetry(IAIS_SITEMAP_URL);
+    const xml = await response.text();
 
-    $("a[href]").each((_, el) => {
-      const href = $(el).attr("href") ?? "";
-      const title = $(el).text().trim();
+    const pdfRegex = /<loc>(https:\/\/www\.iais\.org\/uploads\/[^<]+\.pdf)<\/loc>/gi;
+    const seen = new Set<string>();
+    let match: RegExpExecArray | null;
+    while ((match = pdfRegex.exec(xml)) !== null) {
+      const url = match[1]!;
+      if (seen.has(url)) continue;
+      seen.add(url);
 
-      if (!href || !title) return;
-      if (!href.toLowerCase().endsWith(".pdf") && !href.includes("/activities-topics")) return;
+      const filenameRaw = basename(url.split("?")[0] ?? url);
+      if (!isInsuranceRelevant(filenameRaw) && !isInsuranceRelevant(url)) continue;
 
-      const fullUrl = href.startsWith("http") ? href : `${IAIS_BASE_URL}${href}`;
-      const filename = `iais-${basename(href.split("?")[0] ?? href) || `doc-${links.length + 1}.pdf`}`;
+      // Filter out obvious non-standards: newsletters, press releases, QA docs,
+      // consultation resolutions, stakeholder presentations, draft work-in-progress,
+      // translations, MMoU admin, meeting agendas, etc.
+      if (shouldSkipFilename(filenameRaw)) continue;
 
-      let category = "Insurance Core Principles";
-      if (href.includes("application-paper")) category = "Application Papers";
-      else if (href.includes("comframe")) category = "ComFrame";
-      else if (href.includes("financial-stability")) category = "Holistic Framework";
+      const title = cleanFilenameForTitle(url);
+      const category = inferCategoryFromUrl(url);
+      const filename = `iais-${filenameRaw.toLowerCase()}`;
 
-      if (links.some((l) => l.url === fullUrl)) return;
-      links.push({ title, url: fullUrl, category, filename, source: "iais" });
-    });
+      links.push({ title, url, category, filename, source: "iais" });
+    }
   } catch (err) {
-    console.warn(`  Warning: IAIS portal scraping failed: ${err instanceof Error ? err.message : String(err)}`);
+    console.warn(
+      `  Warning: IAIS sitemap scraping failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
-  if (links.length === 0) {
-    console.warn("  No links found via IAIS scraping. Falling back to known documents.");
+  return links;
+}
+
+const SKIP_PATTERNS = [
+  "newsletter",
+  "press-release",
+  "press_release",
+  "iais-mmou",
+  "stakeholder-engagement",
+  "year-in-review",
+  "gimar",
+  "targeted-jurisdictional",
+  "summary-of-outcomes",
+  "progress-monitoring",
+  "cover-note",
+  "members-and-stakeholders-comments",
+  "resolution-of-public-consultation",
+  "resolution-of-comments",
+  "resolution-to-public",
+  "summary-of-main",
+  "public-consultation-comments",
+  "public-consultation-questions",
+  "compiled-comments",
+  "main-comments-received",
+  "draft-",
+  "presentation-on",
+  "presentation_on",
+  "webinar-on",
+  "webinar_on",
+  "stakeholder-session",
+  "stakeholder-meeting",
+  "stakeholder_meeting",
+  "comparison-table",
+  "japanese-translation",
+  "arabic-translation",
+  "french-translation",
+  "french190525",
+  "espanol",
+  "spanish",
+  "chinese",
+  "principles-and-standards-only",
+  "-agenda-",
+  "letter-",
+  "roadmap",
+  "press-briefing",
+  "working-paper",
+  "press conference",
+  "fsi-iais",
+  "register",
+  "ia-igs",
+  "iaigs",
+  "annexes",
+  "section-",
+  "explanatory-note",
+  "technical-note",
+  "high-level-messages",
+  "draft_",
+];
+
+function shouldSkipFilename(filenameRaw: string): boolean {
+  const lower = filenameRaw.toLowerCase();
+  return SKIP_PATTERNS.some((p) => lower.includes(p));
+}
+
+async function scrapeIaisLivePages(): Promise<DocumentLink[]> {
+  const pages: Array<{ url: string; defaultCategory: string }> = [
+    { url: IAIS_ICP_URL, defaultCategory: "Insurance Core Principles" },
+    { url: IAIS_AP_URL, defaultCategory: "Application Papers" },
+  ];
+  const links: DocumentLink[] = [];
+  const seen = new Set<string>();
+
+  for (const { url: pageUrl, defaultCategory } of pages) {
+    console.log(`Scanning IAIS page: ${pageUrl}`);
+    try {
+      const response = await fetchWithRetry(pageUrl);
+      const html = await response.text();
+
+      const anchorRegex = /href="(https:\/\/www\.iais\.org\/uploads\/[^"]+\.pdf)"/gi;
+      let match: RegExpExecArray | null;
+      while ((match = anchorRegex.exec(html)) !== null) {
+        const url = match[1]!;
+        if (seen.has(url)) continue;
+        seen.add(url);
+
+        const filenameRaw = basename(url.split("?")[0] ?? url);
+        if (!isInsuranceRelevant(filenameRaw) && !isInsuranceRelevant(url)) continue;
+        if (shouldSkipFilename(filenameRaw)) continue;
+
+        const title = cleanFilenameForTitle(url);
+        const category = inferCategoryFromUrl(url) || defaultCategory;
+        const filename = `iais-${filenameRaw.toLowerCase()}`;
+        links.push({ title, url, category, filename, source: "iais" });
+      }
+    } catch (err) {
+      console.warn(
+        `  Warning: page scan failed (${pageUrl}): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    await sleep(RATE_LIMIT_MS);
   }
 
   return links;
 }
 
 // ---------------------------------------------------------------------------
-// Known document fallback list
+// NAIC: attempt discovery; gracefully handle 403 auth wall
 // ---------------------------------------------------------------------------
 
-function getKnownDocuments(): DocumentLink[] {
-  return [
-    // IAIS ICPs
+async function probeNaic(): Promise<{ reachable: boolean; status: number; note: string }> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const response = await fetch(NAIC_MODELS_URL, {
+      headers: { "User-Agent": USER_AGENT },
+      signal: controller.signal,
+      redirect: "follow",
+    });
+    clearTimeout(timeoutId);
+    return {
+      reachable: response.ok,
+      status: response.status,
+      note: response.ok ? "accessible" : `HTTP ${response.status} — likely gated behind account registration`,
+    };
+  } catch (err) {
+    return {
+      reachable: false,
+      status: 0,
+      note: `fetch error: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Lloyd's: known public bulletin URLs (JS-rendered listing, so hardcode a curated set)
+// ---------------------------------------------------------------------------
+
+function getLloydsKnownBulletins(): DocumentLink[] {
+  // Lloyd's market bulletins are publicly accessible but served from a JS-rendered
+  // listing. A stable curated set of high-interest bulletins is listed here. Each
+  // is fetched and skipped on 404 so the pipeline proceeds without blocking.
+  const bulletins: Array<{ id: string; title: string; path: string }> = [
+    // Cyber risk bulletins
     {
-      title: "IAIS Insurance Core Principles (ICPs) 2019",
-      url: "https://www.iaisweb.org/uploads/2022/01/ICPs-adopted-in-November-2019-clean-version.pdf",
-      category: "Insurance Core Principles",
-      filename: "iais-icp-2019.pdf",
-      source: "iais",
-    },
-    // IAIS Application Papers
-    {
-      title: "Application Paper on Supervision of Insurer Cyber Risk",
-      url: "https://www.iaisweb.org/uploads/2023/11/Application-Paper-on-Supervision-of-Insurer-Cyber-Risk.pdf",
-      category: "Application Papers",
-      filename: "iais-ap-cyber-2023.pdf",
-      source: "iais",
-    },
-    {
-      title: "Application Paper on Supervision of Climate-Related Risks",
-      url: "https://www.iaisweb.org/uploads/2021/05/Application-Paper-on-the-Supervision-of-Climate-related-Risks-in-the-Insurance-Sector.pdf",
-      category: "Application Papers",
-      filename: "iais-ap-climate-2021.pdf",
-      source: "iais",
-    },
-    {
-      title: "Application Paper on Use of Big Data Analytics in Insurance",
-      url: "https://www.iaisweb.org/uploads/2020/07/200716-Application-Paper-on-the-Use-of-Big-Data-Analytics-in-Insurance.pdf",
-      category: "Application Papers",
-      filename: "iais-ap-bigdata-2020.pdf",
-      source: "iais",
-    },
-    {
-      title: "ComFrame — Common Framework for Internationally Active Insurance Groups",
-      url: "https://www.iaisweb.org/uploads/2022/01/ComFrame-adopted-in-November-2019-clean-version.pdf",
-      category: "ComFrame",
-      filename: "iais-comframe-2019.pdf",
-      source: "iais",
-    },
-    {
-      title: "Holistic Framework for Systemic Risk in the Insurance Sector",
-      url: "https://www.iaisweb.org/uploads/2022/01/Holistic-Framework-for-Systemic-Risk-adopted-November-2019.pdf",
-      category: "Holistic Framework",
-      filename: "iais-holistic-framework-2019.pdf",
-      source: "iais",
-    },
-    // NAIC Model Laws
-    {
-      title: "NAIC Insurance Data Security Model Law (MDL-668)",
-      url: "https://content.naic.org/sites/default/files/inline-files/MDL-668.pdf",
-      category: "NAIC Model Laws",
-      filename: "naic-mdl-668.pdf",
-      source: "naic",
+      id: "y5381",
+      title: "Lloyd's Market Bulletin Y5381 — State-Backed Cyber Attack Exclusions",
+      path: "/resources/y5381",
     },
     {
-      title: "NAIC Privacy of Consumer Financial and Health Information Model Regulation (MDL-672)",
-      url: "https://content.naic.org/sites/default/files/inline-files/MDL-672.pdf",
-      category: "NAIC Model Laws",
-      filename: "naic-mdl-672.pdf",
-      source: "naic",
-    },
-    // Lloyd's
-    {
-      title: "Lloyd's Minimum Standards — Cyber Insurance Underwriting (MS11)",
-      url: "https://www.lloyds.com/conducting-business/market-oversight/acts-and-regulation/lloyds-minimum-standards",
-      category: "Lloyd's Market Requirements",
-      filename: "lloyds-ms11-cyber.pdf",
-      source: "lloyds",
-    },
-    {
-      title: "Lloyd's Market Bulletin — State-Backed Cyber Attack Exclusion (Y5381)",
-      url: "https://www.lloyds.com/news-and-risk-insight/risk-reports/library/technology/managing-cyber-risk",
-      category: "Lloyd's Market Requirements",
-      filename: "lloyds-y5381-cyber-exclusion.pdf",
-      source: "lloyds",
+      id: "y5258",
+      title: "Lloyd's Market Bulletin Y5258 — Cyber Risk War and Infrastructure Exclusions",
+      path: "/resources/y5258",
     },
   ];
+  return bulletins.map((b) => ({
+    title: b.title,
+    url: `${LLOYDS_BASE_URL}${b.path}`,
+    category: "Lloyd's Market Requirements",
+    filename: `lloyds-${b.id}.pdf`,
+    source: "lloyds" as SourceName,
+  }));
 }
 
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
+
+function dedupeLinks(links: DocumentLink[]): DocumentLink[] {
+  const seen = new Set<string>();
+  const out: DocumentLink[] = [];
+  for (const l of links) {
+    if (seen.has(l.url)) continue;
+    seen.add(l.url);
+    out.push(l);
+  }
+  return out;
+}
 
 async function main(): Promise<void> {
   if (!existsSync(RAW_DIR)) {
@@ -302,13 +436,54 @@ async function main(): Promise<void> {
     console.log(`Created directory: ${RAW_DIR}`);
   }
 
-  // Scrape IAIS portal; fall back to known list if scraping yields nothing
-  let documents = await scrapeIaisPortal();
-  if (documents.length === 0) {
-    documents = getKnownDocuments();
+  const sourceStatus: Record<SourceName, { status: string; notes: string; documents: number }> = {
+    iais: { status: "unknown", notes: "", documents: 0 },
+    naic: { status: "unknown", notes: "", documents: 0 },
+    lloyds: { status: "unknown", notes: "", documents: 0 },
+  };
+
+  const wantSource = (s: SourceName): boolean => !sourceFilter || sourceFilter === s;
+
+  // --- Discover IAIS documents -------------------------------------------
+  let iaisLinks: DocumentLink[] = [];
+  if (wantSource("iais")) {
+    const sitemapLinks = await scrapeIaisSitemap();
+    const pageLinks = await scrapeIaisLivePages();
+    iaisLinks = dedupeLinks([...pageLinks, ...sitemapLinks]);
+    sourceStatus.iais.documents = iaisLinks.length;
+    sourceStatus.iais.status = iaisLinks.length > 0 ? "available" : "empty";
+    sourceStatus.iais.notes = `Scraped iais.org sitemap (${sitemapLinks.length}) + live pages (${pageLinks.length}).`;
+    console.log(`  IAIS discovered: ${iaisLinks.length} documents`);
   }
 
-  console.log(`Found ${documents.length} insurance regulatory documents to process`);
+  // --- Probe NAIC ---------------------------------------------------------
+  let naicLinks: DocumentLink[] = [];
+  if (wantSource("naic")) {
+    const probe = await probeNaic();
+    sourceStatus.naic.status = probe.reachable ? "available" : "gated";
+    sourceStatus.naic.notes = probe.note;
+    console.log(`  NAIC probe: HTTP ${probe.status} — ${probe.note}`);
+    if (!probe.reachable) {
+      console.log("  NAIC model laws require account registration. Skipping (documented gap).");
+    }
+    // If reachable we would populate naicLinks here, but most NAIC model-law PDFs
+    // are behind member login. We intentionally do not try to bypass.
+  }
+
+  // --- Lloyd's (known bulletin set, best-effort) -------------------------
+  let lloydsLinks: DocumentLink[] = [];
+  if (wantSource("lloyds")) {
+    lloydsLinks = getLloydsKnownBulletins();
+    sourceStatus.lloyds.documents = lloydsLinks.length;
+    sourceStatus.lloyds.status = "best-effort";
+    sourceStatus.lloyds.notes =
+      "Lloyd's bulletin listing is JS-rendered; using curated known-bulletin set. " +
+      "Individual bulletin URLs may 404 if retired — skipped gracefully.";
+    console.log(`  Lloyd's curated bulletins: ${lloydsLinks.length} candidates`);
+  }
+
+  let documents = dedupeLinks([...iaisLinks, ...naicLinks, ...lloydsLinks]);
+  console.log(`\nTotal discovered: ${documents.length} insurance-regulatory documents`);
 
   if (documents.length > fetchLimit) {
     documents = documents.slice(0, fetchLimit);
@@ -325,6 +500,7 @@ async function main(): Promise<void> {
 
   const fetched: FetchedDocument[] = [];
   let skipped = 0;
+  let errors = 0;
 
   for (let i = 0; i < documents.length; i++) {
     const doc = documents[i]!;
@@ -366,12 +542,17 @@ async function main(): Promise<void> {
       console.error(
         `  ERROR fetching ${doc.url}: ${err instanceof Error ? err.message : String(err)}`,
       );
+      errors++;
     }
 
-    // Rate limit between requests
     if (i < documents.length - 1) {
       await sleep(RATE_LIMIT_MS);
     }
+  }
+
+  const perSourceFetched: Record<string, number> = {};
+  for (const f of fetched) {
+    perSourceFetched[f.source] = (perSourceFetched[f.source] ?? 0) + 1;
   }
 
   const summary = {
@@ -379,7 +560,9 @@ async function main(): Promise<void> {
     total: documents.length,
     fetched: fetched.length,
     skipped,
-    errors: documents.length - fetched.length - skipped,
+    errors,
+    sourceStatus,
+    perSourceFetched,
     documents: fetched.map((d) => ({
       title: d.title,
       filename: d.filename,
@@ -390,7 +573,9 @@ async function main(): Promise<void> {
   };
 
   writeFileSync(join(RAW_DIR, "fetch-summary.json"), JSON.stringify(summary, null, 2), "utf8");
-  console.log(`\nFetch complete: ${fetched.length} fetched, ${skipped} skipped, ${summary.errors} errors`);
+  console.log(`\nFetch complete: ${fetched.length} fetched, ${skipped} skipped, ${errors} errors`);
+  console.log(`Per-source fetched: ${JSON.stringify(perSourceFetched)}`);
+  console.log(`Source status: ${JSON.stringify(sourceStatus, null, 2)}`);
   console.log(`Summary written to ${join(RAW_DIR, "fetch-summary.json")}`);
 }
 

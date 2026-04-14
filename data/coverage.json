@@ -1,0 +1,42 @@
+{
+  "generatedAt": "2026-04-14T06:01:03.627Z",
+  "mcp": "insurance-regulatory-mcp",
+  "version": "0.1.0",
+  "sources": [
+    {
+      "name": "IAIS — Insurance Core Principles, ComFrame, Application Papers",
+      "url": "https://www.iais.org/activities-topics/standard-setting/icps-and-comframe/",
+      "last_fetched": "2026-04-14T05:56:24.953Z",
+      "update_frequency": "quarterly",
+      "item_count": 75,
+      "status": "current",
+      "notes": "Scraped iais.org sitemap (78) + live pages (6)."
+    },
+    {
+      "name": "NAIC — Model Laws",
+      "url": "https://content.naic.org/cipr_topics/",
+      "last_fetched": "2026-04-14T05:56:24.953Z",
+      "update_frequency": "quarterly",
+      "item_count": 0,
+      "status": "gated",
+      "notes": "HTTP 403 — likely gated behind account registration"
+    },
+    {
+      "name": "Lloyd's — Market Bulletins",
+      "url": "https://www.lloyds.com/market-resources/market-bulletins",
+      "last_fetched": "2026-04-14T05:56:24.953Z",
+      "update_frequency": "rolling",
+      "item_count": 0,
+      "status": "unknown",
+      "notes": "Lloyd's bulletin listing is JS-rendered; using curated known-bulletin set. Individual bulletin URLs may 404 if retired — skipped gracefully."
+    }
+  ],
+  "totals": {
+    "frameworks": 8,
+    "controls": 28,
+    "circulars": 31
+  },
+  "per_source_documents": {
+    "iais": 75
+  }
+}
