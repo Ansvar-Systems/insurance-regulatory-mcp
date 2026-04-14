@@ -21,12 +21,14 @@ COPY tsconfig.json ./
 COPY src/ ./src/
 COPY scripts/ ./scripts/
 COPY sources.yml ./
+COPY server.json ./
 
 # Build TypeScript
 RUN npm run build
 
-# Seed the sample database so the container works out-of-the-box
-RUN mkdir -p data && node dist/scripts/seed-sample.js
+# Copy the ingested production database into place so the container ships with
+# real data (built from data/insurance.db during the CI pipeline).
+COPY data/ ./data/
 
 # Remove dev dependencies
 RUN npm prune --omit=dev
