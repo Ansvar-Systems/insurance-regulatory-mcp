@@ -1,9 +1,14 @@
 /**
  * Update data/coverage.json with current database statistics.
  *
- * Reads the insurance regulatory SQLite database, groups circulars by source
- * (derived from each document's pdf_url), and writes a coverage summary used
- * by the freshness checker, fleet manifest, and the `list_sources` tool.
+ * Preserves hand-maintained schema fields (schema_version, mcp_type,
+ * scope_statement, scope_exclusions, gaps, per-source metadata, notes,
+ * completeness, etc.) and only refreshes the dynamic counts + timestamps.
+ * Runs safely on CI without clobbering docs.
+ *
+ * Per-source item_count is recomputed from data/raw/*.meta.json using the
+ * existing source's `id` to pick the right key. Source order and entry
+ * list are preserved from existing coverage.json.
  *
  * Usage:
  *   npx tsx scripts/update-coverage.ts
@@ -17,28 +22,12 @@ const DB_PATH = process.env["INSURANCE_DB_PATH"] ?? "data/insurance.db";
 const COVERAGE_FILE = "data/coverage.json";
 const RAW_DIR = "data/raw";
 
-interface CoverageSource {
-  name: string;
-  url: string;
-  last_fetched: string | null;
-  update_frequency: string;
-  item_count: number;
-  status: "current" | "stale" | "gated" | "unknown";
-  notes?: string | undefined;
-}
-
-interface CoverageFile {
-  generatedAt: string;
-  mcp: string;
-  version: string;
-  sources: CoverageSource[];
-  totals: {
-    frameworks: number;
-    controls: number;
-    circulars: number;
-  };
-  per_source_documents: Record<string, number>;
-}
+// Map from coverage-source id to raw meta-file `source` field.
+const SOURCE_ID_TO_RAW: Record<string, string> = {
+  "iais-icps-comframe": "iais",
+  "naic-models": "naic",
+  "lloyds-bulletins": "lloyds",
+};
 
 function readFetchSummary(): {
   sourceStatus?: Record<string, { status: string; notes: string; documents: number }>;
@@ -55,7 +44,6 @@ function readFetchSummary(): {
 }
 
 function countPerSource(): Record<string, number> {
-  // Count .meta.json files per source (authoritative for what was ingested)
   if (!existsSync(RAW_DIR)) return {};
   const counts: Record<string, number> = {};
   for (const f of readdirSync(RAW_DIR).filter((x) => x.endsWith(".meta.json"))) {
@@ -83,66 +71,77 @@ async function main(): Promise<void> {
   const controls = (db.prepare("SELECT COUNT(*) AS n FROM controls").get() as { n: number }).n;
   const circulars = (db.prepare("SELECT COUNT(*) AS n FROM circulars").get() as { n: number }).n;
 
-  const summary = readFetchSummary();
+  void readFetchSummary; // retained for possible future use
   const perSource = countPerSource();
-  const fetchStatus = summary.sourceStatus ?? {};
 
-  const sources: CoverageSource[] = [
-    {
-      name: "IAIS — Insurance Core Principles, ComFrame, Application Papers",
-      url: "https://www.iais.org/activities-topics/standard-setting/icps-and-comframe/",
-      last_fetched: summary.fetchedAt ?? null,
-      update_frequency: "quarterly",
-      item_count: perSource["iais"] ?? 0,
-      status: (fetchStatus["iais"]?.status === "available" ? "current" : "unknown") as
-        | "current"
-        | "unknown",
-      notes: fetchStatus["iais"]?.notes,
-    },
-    {
-      name: "NAIC — Model Laws",
-      url: "https://content.naic.org/cipr_topics/",
-      last_fetched: summary.fetchedAt ?? null,
-      update_frequency: "quarterly",
-      item_count: perSource["naic"] ?? 0,
-      status:
-        (perSource["naic"] ?? 0) > 0
-          ? ("current" as const)
-          : ("gated" as const),
-      notes:
-        fetchStatus["naic"]?.notes ??
-        "NAIC model laws require account registration; skipped in this ingestion run.",
-    },
-    {
-      name: "Lloyd's — Market Bulletins",
-      url: "https://www.lloyds.com/market-resources/market-bulletins",
-      last_fetched: summary.fetchedAt ?? null,
-      update_frequency: "rolling",
-      item_count: perSource["lloyds"] ?? 0,
-      status: (perSource["lloyds"] ?? 0) > 0 ? ("current" as const) : ("unknown" as const),
-      notes: fetchStatus["lloyds"]?.notes,
-    },
-  ];
+  const existing: Record<string, unknown> = existsSync(COVERAGE_FILE)
+    ? JSON.parse(readFileSync(COVERAGE_FILE, "utf8"))
+    : {};
 
-  const coverage: CoverageFile = {
-    generatedAt: new Date().toISOString(),
-    mcp: "insurance-regulatory-mcp",
-    version: "0.1.0",
+  // Per-source update: use source.id to look up the raw-meta key.
+  // If we have a live count from raw/, use it; otherwise preserve the
+  // existing item_count (e.g. for sources where ingestion was gated).
+  const sources =
+    Array.isArray(existing["sources"]) && existing["sources"].length > 0
+      ? (existing["sources"] as Record<string, unknown>[]).map((s) => {
+          const id = typeof s["id"] === "string" ? (s["id"] as string) : "";
+          const rawKey = SOURCE_ID_TO_RAW[id];
+          if (rawKey && rawKey in perSource) {
+            return {
+              ...s,
+              item_count: perSource[rawKey] ?? 0,
+            };
+          }
+          return s;
+        })
+      : [];
+
+  const totalItems = sources.reduce((acc, s) => {
+    const n = s["item_count"];
+    return acc + (typeof n === "number" ? n : 0);
+  }, 0);
+
+  const existingSummary =
+    (existing["summary"] as Record<string, unknown> | undefined) ?? {};
+  const summary = {
+    ...existingSummary,
+    total_sources: sources.length,
+    total_items: totalItems,
+  };
+
+  // Preserve all keys that existed in the previous per_source_documents
+  // (even if currently zero / no raw files present), but overwrite values.
+  const existingPerSource =
+    (existing["per_source_documents"] as Record<string, number> | undefined) ?? {};
+  const mergedPerSource: Record<string, number> = { ...existingPerSource };
+  for (const [k, v] of Object.entries(perSource)) mergedPerSource[k] = v;
+  // For keys present in existing but missing from raw/, fall back to 0.
+  for (const k of Object.keys(existingPerSource)) {
+    if (!(k in perSource)) mergedPerSource[k] = 0;
+  }
+
+  const coverage = {
+    ...existing,
     sources,
     totals: { frameworks, controls, circulars },
-    per_source_documents: perSource,
+    per_source_documents: mergedPerSource,
+    summary,
+    generatedAt: new Date().toISOString(),
   };
 
   const dir = dirname(COVERAGE_FILE);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 
-  writeFileSync(COVERAGE_FILE, JSON.stringify(coverage, null, 2), "utf8");
+  writeFileSync(COVERAGE_FILE, JSON.stringify(coverage, null, 2) + "\n", "utf8");
 
   console.log(`Coverage updated: ${COVERAGE_FILE}`);
   console.log(`  Frameworks : ${frameworks}`);
   console.log(`  Controls   : ${controls}`);
   console.log(`  Circulars  : ${circulars}`);
   console.log(`  Per source : ${JSON.stringify(perSource)}`);
+  console.log(
+    `  Schema fields preserved: scope_exclusions, gaps, per-source metadata`,
+  );
 }
 
 main().catch((err) => {
