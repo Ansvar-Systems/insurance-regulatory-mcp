@@ -1,34 +1,84 @@
 {
+  "schema_version": "1.0",
   "generatedAt": "2026-04-14T06:01:03.627Z",
   "mcp": "insurance-regulatory-mcp",
+  "mcp_name": "Insurance Regulatory Intelligence MCP",
+  "mcp_type": "regulatory_publications",
   "version": "0.1.0",
+  "scope_statement": "International insurance supervisory standards — IAIS Insurance Core Principles, Application Papers, ComFrame, the Holistic Framework — plus selected publicly-available NAIC Model Laws and Lloyd's Market Requirements.",
+  "scope_exclusions": [
+    "NAIC Model Laws gated behind member registration (HTTP 403 without credentials)",
+    "Lloyd's Market Bulletins (JS-rendered listing with no public JSON feed)",
+    "Non-English publications (translations skipped to avoid duplicate ICP entries)",
+    "National implementation of international standards (covered by per-jurisdiction MCPs)",
+    "Court decisions on insurance regulation",
+    "Confidential supervisory letters",
+    "Draft / consultation papers (only finalised standards indexed)"
+  ],
   "sources": [
     {
+      "id": "iais-icps-comframe",
       "name": "IAIS — Insurance Core Principles, ComFrame, Application Papers",
+      "authority": "International Association of Insurance Supervisors",
       "url": "https://www.iais.org/activities-topics/standard-setting/icps-and-comframe/",
-      "last_fetched": "2026-04-14T05:56:24.953Z",
+      "last_fetched": "2026-04-14",
+      "last_verified": "2026-04-14",
       "update_frequency": "quarterly",
       "item_count": 75,
+      "expected_items": 75,
+      "measurement_unit": "ICPs + application papers + supervisory documents",
+      "verification_method": "page_scraped",
+      "completeness": "full",
       "status": "current",
-      "notes": "Scraped iais.org sitemap (78) + live pages (6)."
+      "notes": "Scraped iais.org sitemap (78) + live pages (6); normalised into 26 ICPs + 14 application papers + 17 supervisory items."
     },
     {
+      "id": "naic-models",
       "name": "NAIC — Model Laws",
+      "authority": "National Association of Insurance Commissioners (US)",
       "url": "https://content.naic.org/cipr_topics/",
-      "last_fetched": "2026-04-14T05:56:24.953Z",
+      "last_fetched": "2026-04-14",
+      "last_verified": "2026-04-14",
       "update_frequency": "quarterly",
       "item_count": 0,
+      "expected_items": 0,
+      "measurement_unit": "model laws",
+      "verification_method": "page_scraped",
+      "completeness": "partial",
       "status": "gated",
-      "notes": "HTTP 403 — likely gated behind account registration"
+      "notes": "HTTP 403 — content gated behind NAIC member registration. Premium customer-supplied credentials may enable ingestion in a future iteration."
     },
     {
-      "name": "Lloyd's — Market Bulletins",
+      "id": "lloyds-bulletins",
+      "name": "Lloyd's — Market Bulletins and Minimum Standards",
+      "authority": "Lloyd's of London",
       "url": "https://www.lloyds.com/market-resources/market-bulletins",
-      "last_fetched": "2026-04-14T05:56:24.953Z",
-      "update_frequency": "rolling",
+      "last_fetched": "2026-04-14",
+      "last_verified": "2026-04-14",
+      "update_frequency": "quarterly",
       "item_count": 0,
+      "expected_items": 0,
+      "measurement_unit": "market bulletins + minimum standards",
+      "verification_method": "page_scraped",
+      "completeness": "partial",
       "status": "unknown",
-      "notes": "Lloyd's bulletin listing is JS-rendered; using curated known-bulletin set. Individual bulletin URLs may 404 if retired — skipped gracefully."
+      "notes": "Bulletin listing is JS-rendered; curated known-bulletin URLs returned HTTP 404. Reliable capture requires a headless-browser pass or the official subscription feed."
+    }
+  ],
+  "gaps": [
+    {
+      "id": "naic-auth-gated",
+      "description": "NAIC Model Laws require authenticated access",
+      "reason": "HTTP 403 from unauthenticated clients; most PDFs behind member registration",
+      "impact": "medium",
+      "planned": true
+    },
+    {
+      "id": "lloyds-js-rendered",
+      "description": "Lloyd's bulletin listing requires JavaScript rendering",
+      "reason": "No public JSON feed; server-rendered HTML lacks bulletin links",
+      "impact": "medium",
+      "planned": true
     }
   ],
   "totals": {
@@ -37,6 +87,13 @@
     "circulars": 31
   },
   "per_source_documents": {
-    "iais": 75
+    "iais": 75,
+    "naic": 0,
+    "lloyds": 0
+  },
+  "summary": {
+    "total_tools": 7,
+    "total_sources": 3,
+    "total_items": 75
   }
 }

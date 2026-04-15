@@ -1,0 +1,157 @@
+{
+  "schema_version": "1.0",
+  "mcp_name": "insurance-regulatory-mcp",
+  "mcp_type": "regulatory_publications",
+  "authority": "International Association of Insurance Supervisors (IAIS) + supplementary NAIC/Lloyd's",
+  "portal": "https://www.iais.org/activities-topics/standard-setting/icps-and-comframe/",
+  "census_date": "2026-04-14",
+  "agent": "claude-opus-4-6",
+  "summary": {
+    "total_frameworks": 8,
+    "controls": 28,
+    "circulars": 31,
+    "fully_ingested": 59,
+    "pending": 2,
+    "excluded": 0
+  },
+  "frameworks": [
+    {
+      "id": "iais-icp",
+      "code": "ICP",
+      "name": "IAIS Insurance Core Principles",
+      "version": "December 2024 master (ICP-26 from 2018 revision)",
+      "authority": "International Association of Insurance Supervisors",
+      "item_count": 26,
+      "measurement_unit": "core principles",
+      "source_url": "https://www.iais.org/activities-topics/standard-setting/icps-and-comframe/",
+      "ingested": true,
+      "verification_date": "2026-04-14"
+    },
+    {
+      "id": "iais-ap",
+      "code": "AP",
+      "name": "IAIS Application Papers",
+      "version": "Current (2018–2026 adopted versions)",
+      "authority": "International Association of Insurance Supervisors",
+      "item_count": 14,
+      "measurement_unit": "application papers",
+      "source_url": "https://www.iais.org/activities-topics/",
+      "ingested": true,
+      "verification_date": "2026-04-14"
+    },
+    {
+      "id": "iais-supervisory",
+      "code": "SUP",
+      "name": "IAIS Supervisory Material",
+      "version": "Current",
+      "authority": "International Association of Insurance Supervisors",
+      "item_count": 17,
+      "measurement_unit": "supervisory documents (peer reviews, issues papers, climate guidance)",
+      "source_url": "https://www.iais.org/activities-topics/",
+      "ingested": true,
+      "verification_date": "2026-04-14"
+    },
+    {
+      "id": "iais-comframe",
+      "code": "CF",
+      "name": "ComFrame — Common Framework for IAIGs",
+      "version": "2019 revision + updates",
+      "authority": "International Association of Insurance Supervisors",
+      "item_count": 1,
+      "measurement_unit": "integrated framework (embedded with ICPs)",
+      "source_url": "https://www.iais.org/activities-topics/standard-setting/icps-and-comframe/",
+      "ingested": true,
+      "verification_date": "2026-04-14"
+    },
+    {
+      "id": "iais-holistic",
+      "code": "HF",
+      "name": "IAIS Holistic Framework (systemic risk + ICS)",
+      "version": "Current",
+      "authority": "International Association of Insurance Supervisors",
+      "item_count": 1,
+      "measurement_unit": "framework overview",
+      "source_url": "https://www.iais.org/activities-topics/financial-stability/",
+      "ingested": true,
+      "verification_date": "2026-04-14"
+    },
+    {
+      "id": "naic-models",
+      "code": "NAIC",
+      "name": "NAIC Model Laws (cyber, data, privacy subset)",
+      "version": "Current (publicly-available subset)",
+      "authority": "National Association of Insurance Commissioners (US)",
+      "item_count": 0,
+      "measurement_unit": "model laws",
+      "source_url": "https://content.naic.org/model-laws",
+      "ingested": false,
+      "classification": "inaccessible",
+      "classification_reason": "HTTP 403 — content gated behind member registration",
+      "verification_date": "2026-04-14"
+    },
+    {
+      "id": "lloyds-min",
+      "code": "LLOYDS",
+      "name": "Lloyd's Minimum Standards and Market Bulletins",
+      "version": "Current",
+      "authority": "Lloyd's of London",
+      "item_count": 0,
+      "measurement_unit": "minimum standards and bulletins",
+      "source_url": "https://www.lloyds.com/conducting-business/market-oversight/acts-and-regulation/lloyds-minimum-standards",
+      "ingested": false,
+      "classification": "inaccessible",
+      "classification_reason": "Bulletin listing is JS-rendered; no public JSON feed; curated bulletin URLs returned HTTP 404",
+      "verification_date": "2026-04-14"
+    },
+    {
+      "id": "iais-overview",
+      "code": "FW-OVERVIEW",
+      "name": "Framework overview rows",
+      "version": "2026-04-14",
+      "authority": "Ansvar (synthetic framework-overview rows for search/discovery)",
+      "item_count": 2,
+      "measurement_unit": "overview entries",
+      "source_url": "https://www.iais.org",
+      "ingested": true,
+      "verification_date": "2026-04-14"
+    }
+  ],
+  "database_rows": {
+    "frameworks": 8,
+    "controls": 28,
+    "circulars": 31,
+    "notes": "26 IAIS ICPs + 2 synthetic framework-overview rows populate the controls table. 14 Application Papers + 17 supervisory-material items populate the circulars table. NAIC and Lloyd's frameworks are scoped but empty pending access."
+  },
+  "exclusions": [
+    {
+      "id": "non-english",
+      "description": "Non-English publications",
+      "reason": "Translations skipped to avoid duplicate ICP entries",
+      "classification": "excluded"
+    },
+    {
+      "id": "national-implementation",
+      "description": "National implementation of international standards (Solvency II, RBC, national codes)",
+      "reason": "Covered by separate per-jurisdiction MCPs",
+      "classification": "excluded"
+    },
+    {
+      "id": "court-decisions",
+      "description": "Court decisions on insurance regulation",
+      "reason": "Legal analysis is out of scope",
+      "classification": "excluded"
+    },
+    {
+      "id": "confidential",
+      "description": "Confidential supervisory letters",
+      "reason": "Not publicly available",
+      "classification": "excluded"
+    },
+    {
+      "id": "draft-consultation",
+      "description": "Draft and consultation papers",
+      "reason": "Only finalised standards are indexed",
+      "classification": "excluded"
+    }
+  ]
+}
